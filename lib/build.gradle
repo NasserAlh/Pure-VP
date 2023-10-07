@@ -1,0 +1,36 @@
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
+
+plugins {
+    id 'java-library'
+}
+
+repositories {
+    mavenCentral()
+    maven { url "https://maven.bookmap.com/maven2/releases/" }
+}
+
+dependencies {
+    if (findProperty('is_built_from_main_bookmap_project')) {
+        implementation fileTree(dir: "${main_libs}", include: ['*.jar'])
+        implementation project(':Level1Api')
+        implementation project(':SimplifiedApiWrapper')
+    } else {
+        implementation group: 'com.bookmap.api', name: 'api-core', version: '7.4.0.20'
+        implementation group: 'com.bookmap.api', name: 'api-simplified', version: '7.4.0.20'
+        implementation group: 'org.apache.commons', name: 'commons-lang3', version: '3.11'
+        implementation group: 'com.google.guava', name: 'guava', version: '32.1.2-jre'
+    }
+}
+
+jar {
+    archiveFileName = "Bookmap_Add_On_${LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy_M_d_HH_mm"))}.jar"
+}
+
+task copyJar(type: Copy) {
+    dependsOn jar
+    from jar.archiveFile
+    into '/mnt/c/Bookmap/addons/my_addons'
+}
+
+build.dependsOn copyJar
