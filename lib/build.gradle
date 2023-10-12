@@ -30,7 +30,7 @@ jar {
 task copyJar(type: Copy) {
     dependsOn jar
     from jar.archiveFile
-    into '/mnt/c/Bookmap/addons/my_addons'
+    into '/mnt/shared'
 }
 
 build.dependsOn copyJar
