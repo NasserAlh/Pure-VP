@@ -7,18 +7,18 @@ import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.Map;
 import java.util.concurrent.ConcurrentSkipListMap;
+import java.util.stream.IntStream;
 
 import javax.swing.JSlider;
 
 import velox.api.layer1.annotations.*;
 import velox.api.layer1.data.*;
-import velox.api.layer1.messages.indicators.
-Layer1ApiUserMessageModifyIndicator.GraphType;
+import velox.api.layer1.messages.indicators.Layer1ApiUserMessageModifyIndicator.GraphType;
 import velox.api.layer1.simplified.*;
 import velox.gui.StrategyPanel;
 
 @Layer1SimpleAttachable
-@Layer1StrategyName("POC from Docker and VSCode")
+@Layer1StrategyName("POC Java's IntStream")
 @Layer1ApiVersion(Layer1ApiVersionValue.VERSION1)
 public class PocTrading implements CustomModule, TradeDataListener, TimeListener, CustomSettingsPanelProvider  {
 
@@ -32,35 +32,36 @@ public class PocTrading implements CustomModule, TradeDataListener, TimeListener
 
     @Override
     public void initialize(String alias, InstrumentInfo info, Api api, InitialState initialState) {
-        priceIndicator = api.registerIndicator("Price Indicator", GraphType.PRIMARY, Double.NaN);
-        volumeIndicator = api.registerIndicator("Volume Indicator", GraphType.BOTTOM, Double.NaN);
-        pocIndicator = api.registerIndicator("POC Indicator", GraphType.PRIMARY, Double.NaN);
+        Indicator[] indicators = {
+            priceIndicator = api.registerIndicator("Price Indicator", GraphType.PRIMARY, Double.NaN),
+            volumeIndicator = api.registerIndicator("Volume Indicator", GraphType.BOTTOM, Double.NaN),
+            pocIndicator = api.registerIndicator("POC Indicator", GraphType.PRIMARY, Double.NaN)
+        };
+
         PocTrade = api.registerIndicator("Trade Signal", GraphType.PRIMARY);
 
         Color[] colors = {Color.BLUE, Color.YELLOW, Color.RED};
-        Indicator[] indicators = {priceIndicator, volumeIndicator, pocIndicator};
-        for (int i = 0; i < indicators.length; i++) {
-            indicators[i].setColor(colors[i]);
-        }
+
+        IntStream.range(0, indicators.length)
+                .forEach(i -> indicators[i].setColor(colors[i]));
     }
 
     @Override
     public synchronized void onTrade(double price, int size, TradeInfo tradeInfo) {
-        // Convert the currentTimestamp to New York time
+
         ZonedDateTime currentTime = ZonedDateTime.ofInstant(Instant.ofEpochSecond(currentTimestamp / 1_000_000_000), ZoneId.of("America/New_York"));
         ZonedDateTime startTimeNY = ZonedDateTime.ofInstant(Instant.ofEpochSecond(startTime / 1_000_000_000), ZoneId.of("America/New_York")).withHour(9).withMinute(45);
-        
-        // Exit the method early if before 9:45 am New York time
+
         if (currentTime.isBefore(startTimeNY)) {
             return;
         }
-    
+
         priceIndicator.addPoint(price);
-        volumeProfile.merge(price, size, (a, b) -> a + b);
+        volumeProfile.merge(price, size, Integer::sum);
         volumeIndicator.addPoint(volumeProfile.get(price));
         pointOfControl = volumeProfile.entrySet().stream().max(Map.Entry.comparingByValue()).map(Map.Entry::getKey).orElse(price);
         pocIndicator.addPoint(pointOfControl);
-    
+
         if (currentTimestamp - startTime >= TIME_LIMIT && !Double.isNaN(previousPrice)) {
             boolean enteredUpper = previousPrice > pointOfControl + POC_BUFFER && price <= pointOfControl + POC_BUFFER;
             boolean exitedLower = previousPrice < pointOfControl - POC_BUFFER && price >= pointOfControl - POC_BUFFER;
@@ -68,7 +69,7 @@ public class PocTrading implements CustomModule, TradeDataListener, TimeListener
                 PocTrade.addIcon(price, createTranslucentCircle(enteredUpper), 1, 1);
             }
         }
-    
+
         previousPrice = price;
     }
 
@@ -92,6 +93,7 @@ public class PocTrading implements CustomModule, TradeDataListener, TimeListener
         pocBufferSlider.setPaintLabels(true);
         pocBufferSlider.addChangeListener(e -> POC_BUFFER = ((JSlider) e.getSource()).getValue());
         panel.add(pocBufferSlider);
+
         return new StrategyPanel[]{panel};
     }
 
