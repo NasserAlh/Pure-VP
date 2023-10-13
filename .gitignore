@@ -1,5 +1,28 @@
-# Ignore Gradle project-specific cache directory
-.gradle
+# Gradle specific
+.gradle/
+gradle/
+gradlew
+gradlew.bat
+lib/build/
+lib/bin/
 
-# Ignore Gradle build output directory
-build
+# IDE-specific
+.vscode/
+*.iml
+*.idea/
+
+# Temporary files and other unnecessary files
+*.tmp
+*.log
+*.bak
+*.swp
+.DS_Store
+*.class
+
+# Output binaries and other generated files
+lib/libs/
+lib/tmp/
+
+# External dependencies or mounted directories (if not required in version control)
+lib/mnt/
+

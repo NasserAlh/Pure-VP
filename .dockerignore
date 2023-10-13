@@ -1,0 +1,19 @@
+# Exclude Gradle cache and build-related directories
+.gradle/
+gradle/
+lib/build/
+lib/bin/
+
+# Exclude IDE-specific directories
+.vscode/
+
+# Exclude any mounted directories or external dependencies that don't need to be in the Docker context
+lib/mnt/
+
+# Exclude temporary files and any local environment-specific files
+*.tmp
+*.log
+*.iml
+*.bak
+*.swp
+.DS_Store
