@@ -36,7 +36,7 @@ public class HistoricalDataOnTrade implements CustomModuleAdapter, TradeDataList
 
     @Override
     public void onTrade(double price, int size, TradeInfo tradeInfo) {
-        volumeProfile.merge(price, size, Integer::sum);
+        volumeProfile.merge(price, size, (a, b) -> a + b);
         double pointOfControl = volumeProfile.entrySet().stream().max(
             java.util.Map.Entry.comparingByValue()).map(java.util.Map.Entry::getKey).orElse(price);
         int totalVolumeAtPOC = volumeProfile.getOrDefault(pointOfControl, 0);
