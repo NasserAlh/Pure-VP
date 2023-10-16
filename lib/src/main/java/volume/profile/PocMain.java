@@ -5,12 +5,10 @@ import java.awt.image.BufferedImage;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
-import java.util.stream.IntStream;
 import javax.swing.*;
 import velox.api.layer1.annotations.*;
 import velox.api.layer1.common.Log;
 import velox.api.layer1.data.*;
-import velox.api.layer1.messages.indicators.Layer1ApiUserMessageModifyIndicator.GraphType;
 import velox.api.layer1.settings.StrategySettingsVersion;
 import velox.api.layer1.simplified.*;
 import velox.gui.StrategyPanel;
@@ -42,6 +40,7 @@ public class PocMain implements CustomModule, TradeDataListener, TimeListener, C
     private VolumeProfileHandler volumeProfileHandler = new VolumeProfileHandler();
     private PointOfControlHandler pointOfControlHandler = new PointOfControlHandler();
     private StandardDeviationHandler standardDeviationHandler = new StandardDeviationHandler();
+    private IndicatorInitializer indicatorInitializer;
 
 
     @Override
@@ -49,23 +48,17 @@ public class PocMain implements CustomModule, TradeDataListener, TimeListener, C
         this.api = api;
         this.settings = api.getSettings(Settings.class);
 
-        Indicator[] indicators = {
-            priceIndicator = api.registerIndicator("Price Indicator", GraphType.PRIMARY, Double.NaN),
-            pocIndicator = api.registerIndicator("POC Indicator", GraphType.PRIMARY, Double.NaN),
-            stdDevIndicator = api.registerIndicator("Standard Deviation", GraphType.BOTTOM, Double.NaN)
-        };
+        this.indicatorInitializer = new IndicatorInitializer(api);
+        indicatorInitializer.initializeIndicators();
 
-        pocTradeIndicator = api.registerIndicator("Trade Signal", GraphType.PRIMARY);
-        
-        Color[] colors = {Color.BLUE, Color.RED, Color.GREEN};  // Added Color.GREEN
-
-        IntStream.range(0, indicators.length)
-            .forEach(i -> indicators[i].setColor(colors[i]));
+        priceIndicator = indicatorInitializer.getPriceIndicator();
+        pocIndicator = indicatorInitializer.getPocIndicator();
+        stdDevIndicator = indicatorInitializer.getStdDevIndicator();
+        pocTradeIndicator = indicatorInitializer.getPocTradeIndicator();
     }
 
     @Override
     public synchronized void onTrade(double price, int size, TradeInfo tradeInfo) {
-
         volumeSum += size;
         double volumeRateOfChange = calculateVolumeRateOfChange();
 
@@ -157,7 +150,7 @@ public class PocMain implements CustomModule, TradeDataListener, TimeListener, C
         panel2.add(minuteSpinner);
         
         return new StrategyPanel[]{panel1, panel2};
-}
+    }
 
     @Override
     public void onTimestamp(long nanoseconds) {
