@@ -30,7 +30,7 @@ jar {
 task copyJar(type: Copy) {
     dependsOn jar
     from jar.archiveFile
-    into '/home/nasser/shared'
+    into 'C:\\Bookmap\\addons\\my_addons'
 }
 
 build.dependsOn copyJar
