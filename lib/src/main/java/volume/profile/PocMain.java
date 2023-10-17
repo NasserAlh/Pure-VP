@@ -14,7 +14,7 @@ import velox.gui.StrategyPanel;
 
 @Layer1TradingStrategy
 @Layer1SimpleAttachable
-@Layer1StrategyName("POC synchronized Removal")
+@Layer1StrategyName("POC Ordering Functionality")
 @Layer1ApiVersion(Layer1ApiVersionValue.VERSION1)
 public class PocMain implements CustomModule, TradeDataListener, TimeListener, CustomSettingsPanelProvider {
 
@@ -35,14 +35,14 @@ public class PocMain implements CustomModule, TradeDataListener, TimeListener, C
     private StandardDeviationHandler standardDeviationHandler = new StandardDeviationHandler();
     private IndicatorInitializer indicatorInitializer;
     private OrderPlacer orderPlacer;
-
+    private OrderStatusManager orderStatusManager;  // Added field
 
     @Override
     public void initialize(String alias, InstrumentInfo info, Api api, InitialState initialState) {
         this.api = api;
         this.settings = api.getSettings(Settings.class);
-        this.orderPlacer = new OrderPlacer(alias, api);
-
+        this.orderStatusManager = new OrderStatusManager();  // Instantiate OrderStatusManager
+        this.orderPlacer = new OrderPlacer(alias, api, orderStatusManager);  // Pass OrderStatusManager to OrderPlacer
 
         this.indicatorInitializer = new IndicatorInitializer(api);
         indicatorInitializer.initializeIndicators();
@@ -91,7 +91,7 @@ public class PocMain implements CustomModule, TradeDataListener, TimeListener, C
             boolean volumeTrigger = volumeRateOfChange > VOLUME_TRIGGER_THRESHOLD;
             boolean pocStable = pocRobustness > POC_ROBUSTNESS_THRESHOLD;
     
-            if ((enteredUpper || exitedLower) && volumeTrigger && pocStable && isHighVolatility) {
+            if ((enteredUpper || exitedLower) && volumeTrigger && pocStable && isHighVolatility && !orderStatusManager.isOrderOpen()) {  // Check order status
                 pocTradeIndicator.addIcon(price, createTranslucentCircle(enteredUpper), 1, 1);
     
                 // Assuming a quantity of 1 for simplicity, adjust as needed
