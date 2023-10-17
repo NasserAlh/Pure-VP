@@ -14,7 +14,7 @@ import velox.api.layer1.simplified.*;
 import velox.gui.StrategyPanel;
 
 @Layer1SimpleAttachable
-@Layer1StrategyName("POC with Abstraction")
+@Layer1StrategyName("POC with Abstraction 2")
 @Layer1ApiVersion(Layer1ApiVersionValue.VERSION1)
 public class PocMain implements CustomModule, TradeDataListener, TimeListener, CustomSettingsPanelProvider {
 
@@ -23,6 +23,7 @@ public class PocMain implements CustomModule, TradeDataListener, TimeListener, C
     public double POC_BUFFER = 2;
     public int START_HOUR = 9;
     public int START_MINUTE = 45;
+    public double STANDARD_DEVIATION_THRESHOLD = 0.5;
 }
 
     private Indicator priceIndicator, pocIndicator, pocTradeIndicator;
@@ -79,7 +80,7 @@ public class PocMain implements CustomModule, TradeDataListener, TimeListener, C
         standardDeviationHandler.addPrice(price);
         double standardDeviation = standardDeviationHandler.calculateStandardDeviation();
 
-        boolean isHighVolatility = standardDeviation > 0.5;
+        boolean isHighVolatility = standardDeviation > settings.STANDARD_DEVIATION_THRESHOLD;
         Log.info("Is High Volatility: " + isHighVolatility);
 
         double pointOfControlPrice = pointOfControlHandler.getPointOfControlPrice();  // Obtaining POC price from the handler
@@ -148,8 +149,19 @@ public class PocMain implements CustomModule, TradeDataListener, TimeListener, C
         
         panel2.add(hourSpinner);
         panel2.add(minuteSpinner);
+
+        StrategyPanel panel3 = new StrategyPanel("Standard Deviation Threshold Settings");
         
-        return new StrategyPanel[]{panel1, panel2};
+        JSpinner stdDevThresholdSpinner = new JSpinner(new SpinnerNumberModel(settings.STANDARD_DEVIATION_THRESHOLD, 0.0, 10.0, 0.1));
+        stdDevThresholdSpinner.addChangeListener(e -> {
+            settings.STANDARD_DEVIATION_THRESHOLD = (Double) stdDevThresholdSpinner.getValue();
+            api.setSettings(settings);
+        });
+    
+        panel3.add(new JLabel("Standard Deviation Threshold:"));
+        panel3.add(stdDevThresholdSpinner);
+    
+        return new StrategyPanel[]{panel1, panel2, panel3};
     }
 
     @Override
