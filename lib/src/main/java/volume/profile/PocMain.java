@@ -9,22 +9,14 @@ import javax.swing.*;
 import velox.api.layer1.annotations.*;
 import velox.api.layer1.common.Log;
 import velox.api.layer1.data.*;
-import velox.api.layer1.settings.StrategySettingsVersion;
 import velox.api.layer1.simplified.*;
 import velox.gui.StrategyPanel;
 
+@Layer1TradingStrategy
 @Layer1SimpleAttachable
-@Layer1StrategyName("POC with Abstraction 2")
+@Layer1StrategyName("POC synchronized Removal")
 @Layer1ApiVersion(Layer1ApiVersionValue.VERSION1)
 public class PocMain implements CustomModule, TradeDataListener, TimeListener, CustomSettingsPanelProvider {
-
-    @StrategySettingsVersion(currentVersion = 1, compatibleVersions = {})
-    public static class Settings {
-    public double POC_BUFFER = 2;
-    public int START_HOUR = 9;
-    public int START_MINUTE = 45;
-    public double STANDARD_DEVIATION_THRESHOLD = 0.5;
-}
 
     private Indicator priceIndicator, pocIndicator, pocTradeIndicator;
     private double previousPrice = Double.NaN;
@@ -42,12 +34,15 @@ public class PocMain implements CustomModule, TradeDataListener, TimeListener, C
     private PointOfControlHandler pointOfControlHandler = new PointOfControlHandler();
     private StandardDeviationHandler standardDeviationHandler = new StandardDeviationHandler();
     private IndicatorInitializer indicatorInitializer;
+    private OrderPlacer orderPlacer;
 
 
     @Override
     public void initialize(String alias, InstrumentInfo info, Api api, InitialState initialState) {
         this.api = api;
         this.settings = api.getSettings(Settings.class);
+        this.orderPlacer = new OrderPlacer(alias, api);
+
 
         this.indicatorInitializer = new IndicatorInitializer(api);
         indicatorInitializer.initializeIndicators();
@@ -59,17 +54,17 @@ public class PocMain implements CustomModule, TradeDataListener, TimeListener, C
     }
 
     @Override
-    public synchronized void onTrade(double price, int size, TradeInfo tradeInfo) {
+    public void onTrade(double price, int size, TradeInfo tradeInfo) {
         volumeSum += size;
         double volumeRateOfChange = calculateVolumeRateOfChange();
-
+    
         ZonedDateTime currentTime = ZonedDateTime.ofInstant(Instant.ofEpochSecond(currentTimestamp / 1_000_000_000), NY_ZONE_ID);
         ZonedDateTime startTimeNY = currentTime.withHour(settings.START_HOUR).withMinute(settings.START_MINUTE).withDayOfYear(currentTime.getDayOfYear()).withYear(currentTime.getYear());
-
+    
         if (currentTime.isBefore(startTimeNY)) {return;}
-
+    
         priceIndicator.addPoint(price);
-
+    
         // Updating volume profile using the VolumeProfileHandler
         volumeProfileHandler.addTrade(price, size);
         
@@ -79,32 +74,42 @@ public class PocMain implements CustomModule, TradeDataListener, TimeListener, C
         // Updating recent price data and calculating standard deviation using the StandardDeviationHandler
         standardDeviationHandler.addPrice(price);
         double standardDeviation = standardDeviationHandler.calculateStandardDeviation();
-
+    
         boolean isHighVolatility = standardDeviation > settings.STANDARD_DEVIATION_THRESHOLD;
         Log.info("Is High Volatility: " + isHighVolatility);
-
+    
         double pointOfControlPrice = pointOfControlHandler.getPointOfControlPrice();  // Obtaining POC price from the handler
         pocIndicator.addPoint(pointOfControlPrice);
         stdDevIndicator.addPoint(standardDeviation);
-
+    
         int pocRobustness = volumeProfileHandler.getVolumeProfile().getOrDefault(pointOfControlPrice, 0);
-
+    
         if (currentTimestamp - startTime >= TIME_LIMIT && !Double.isNaN(previousPrice)) {
             boolean enteredUpper = previousPrice > pointOfControlPrice + settings.POC_BUFFER && price <= pointOfControlPrice + settings.POC_BUFFER;
             boolean exitedLower = previousPrice < pointOfControlPrice - settings.POC_BUFFER && price >= pointOfControlPrice - settings.POC_BUFFER;
-
+    
             boolean volumeTrigger = volumeRateOfChange > VOLUME_TRIGGER_THRESHOLD;
             boolean pocStable = pocRobustness > POC_ROBUSTNESS_THRESHOLD;
-
+    
             if ((enteredUpper || exitedLower) && volumeTrigger && pocStable && isHighVolatility) {
                 pocTradeIndicator.addIcon(price, createTranslucentCircle(enteredUpper), 1, 1);
+    
+                // Assuming a quantity of 1 for simplicity, adjust as needed
+                int quantity = 1;  
+                if (enteredUpper) {
+                    // Place a sell order if entered upper threshold
+                    orderPlacer.placeOrder(false, price, quantity);
+                } else if (exitedLower) {
+                    // Place a buy order if exited lower threshold
+                    orderPlacer.placeOrder(true, price, quantity);
                 }
             }
-
+        }
+    
         previousPrice = price;
         prevVolumeSum = volumeSum;
-    } 
-
+    }
+    
     private BufferedImage createTranslucentCircle(boolean isBid) {
         int diameter = 20;
         BufferedImage icon = new BufferedImage(diameter, diameter, BufferedImage.TYPE_INT_ARGB);
