@@ -7,14 +7,13 @@ import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import javax.swing.*;
 import velox.api.layer1.annotations.*;
-import velox.api.layer1.common.Log;
 import velox.api.layer1.data.*;
 import velox.api.layer1.simplified.*;
 import velox.gui.StrategyPanel;
 
 @Layer1TradingStrategy
 @Layer1SimpleAttachable
-@Layer1StrategyName("POC Ordering Functionality")
+@Layer1StrategyName("POC OrderId")
 @Layer1ApiVersion(Layer1ApiVersionValue.VERSION1)
 public class PocMain implements CustomModule, TradeDataListener, TimeListener, CustomSettingsPanelProvider {
 
@@ -76,13 +75,19 @@ public class PocMain implements CustomModule, TradeDataListener, TimeListener, C
         double standardDeviation = standardDeviationHandler.calculateStandardDeviation();
     
         boolean isHighVolatility = standardDeviation > settings.STANDARD_DEVIATION_THRESHOLD;
-        Log.info("Is High Volatility: " + isHighVolatility);
+        //Log.info("Is High Volatility: " + isHighVolatility);
     
         double pointOfControlPrice = pointOfControlHandler.getPointOfControlPrice();  // Obtaining POC price from the handler
         pocIndicator.addPoint(pointOfControlPrice);
         stdDevIndicator.addPoint(standardDeviation);
     
         int pocRobustness = volumeProfileHandler.getVolumeProfile().getOrDefault(pointOfControlPrice, 0);
+    
+        // Check for an open order before attempting to place a new order
+        if (orderStatusManager.getOpenOrderId() != null && !orderStatusManager.isOrderOpen()) {
+            // There's an open order, and it's not fully executed yet.
+            return;  // Exit the method to prevent further order placement.
+        }
     
         if (currentTimestamp - startTime >= TIME_LIMIT && !Double.isNaN(previousPrice)) {
             boolean enteredUpper = previousPrice > pointOfControlPrice + settings.POC_BUFFER && price <= pointOfControlPrice + settings.POC_BUFFER;
@@ -109,6 +114,7 @@ public class PocMain implements CustomModule, TradeDataListener, TimeListener, C
         previousPrice = price;
         prevVolumeSum = volumeSum;
     }
+    
     
     private BufferedImage createTranslucentCircle(boolean isBid) {
         int diameter = 20;
