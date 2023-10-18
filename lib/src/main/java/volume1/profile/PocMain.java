@@ -1,4 +1,4 @@
-package volume.profile;
+package volume1.profile;
 
 import java.awt.*;
 import java.awt.image.BufferedImage;
@@ -14,7 +14,7 @@ import velox.gui.StrategyPanel;
 
 @Layer1TradingStrategy
 @Layer1SimpleAttachable
-@Layer1StrategyName("POC Order Placer")
+@Layer1StrategyName("POC Ordering Functionality")
 @Layer1ApiVersion(Layer1ApiVersionValue.VERSION1)
 public class PocMain implements CustomModule, TradeDataListener, TimeListener, CustomSettingsPanelProvider {
 
