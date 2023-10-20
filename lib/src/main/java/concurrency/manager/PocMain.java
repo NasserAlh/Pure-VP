@@ -2,6 +2,9 @@ package concurrency.manager;
 
 import java.awt.*;
 import java.awt.image.BufferedImage;
+import java.io.BufferedWriter;
+import java.io.FileWriter;
+import java.io.IOException;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
@@ -11,11 +14,14 @@ import velox.api.layer1.data.*;
 import velox.api.layer1.simplified.*;
 import velox.gui.StrategyPanel;
 
+
+
 @Layer1TradingStrategy
 @Layer1SimpleAttachable
-@Layer1StrategyName("POC OrderId Struggle")
+@Layer1StrategyName("POC OrderId Headers")
 @Layer1ApiVersion(Layer1ApiVersionValue.VERSION1)
-public class PocMain implements CustomModule, TradeDataListener, TimeListener, CustomSettingsPanelProvider {
+public class PocMain implements CustomModule, TradeDataListener, TimeListener,
+    OrdersListener, CustomSettingsPanelProvider {
 
     private Indicator priceIndicator, pocIndicator, pocTradeIndicator;
     private double previousPrice = Double.NaN;
@@ -34,6 +40,10 @@ public class PocMain implements CustomModule, TradeDataListener, TimeListener, C
     private StandardDeviationHandler standardDeviationHandler = new StandardDeviationHandler();
     private IndicatorInitializer indicatorInitializer;
     private OrderPlacer orderPlacer;
+    private OrderLogger orderLogger = new OrderLogger();
+    private static final String LOG_PATH = "C:\\Bookmap\\Logs\\Order_log.csv";
+    private BufferedWriter logWriter;
+
 
     @Override
     public void initialize(String alias, InstrumentInfo info, Api api, InitialState initialState) {
@@ -49,66 +59,66 @@ public class PocMain implements CustomModule, TradeDataListener, TimeListener, C
         pocIndicator = indicatorInitializer.getPocIndicator();
         stdDevIndicator = indicatorInitializer.getStdDevIndicator();
         pocTradeIndicator = indicatorInitializer.getPocTradeIndicator();
+
+        initializeCsvFile();
     }
 
     @Override
-public void onTrade(double price, int size, TradeInfo tradeInfo) {
-    volumeSum += size;
-    double volumeRateOfChange = calculateVolumeRateOfChange();
+    public void onTrade(double price, int size, TradeInfo tradeInfo) {
+        volumeSum += size;
+        double volumeRateOfChange = calculateVolumeRateOfChange();
 
-    ZonedDateTime currentTime = ZonedDateTime.ofInstant(Instant.ofEpochSecond(currentTimestamp / 1_000_000_000), NY_ZONE_ID);
-    ZonedDateTime startTimeNY = currentTime.withHour(settings.START_HOUR).withMinute(settings.START_MINUTE).withDayOfYear(currentTime.getDayOfYear()).withYear(currentTime.getYear());
+        ZonedDateTime currentTime = ZonedDateTime.ofInstant(Instant.ofEpochSecond(currentTimestamp / 1_000_000_000), NY_ZONE_ID);
+        ZonedDateTime startTimeNY = currentTime.withHour(settings.START_HOUR).withMinute(settings.START_MINUTE).withDayOfYear(currentTime.getDayOfYear()).withYear(currentTime.getYear());
 
-    if (currentTime.isBefore(startTimeNY)) {return;}
+        if (currentTime.isBefore(startTimeNY)) {return;}
 
-    priceIndicator.addPoint(price);
+        priceIndicator.addPoint(price);
 
-    // Updating volume profile using the VolumeProfileHandler
-    volumeProfileHandler.addTrade(price, size);
-    
-    // Updating point of control using the PointOfControlHandler
-    pointOfControlHandler.updatePOC(price, volumeProfileHandler.getVolumeProfile().get(price));
-    
-    // Updating recent price data and calculating standard deviation using the StandardDeviationHandler
-    standardDeviationHandler.addPrice(price);
-    double standardDeviation = standardDeviationHandler.calculateStandardDeviation();
+        // Updating volume profile using the VolumeProfileHandler
+        volumeProfileHandler.addTrade(price, size);
+        
+        // Updating point of control using the PointOfControlHandler
+        pointOfControlHandler.updatePOC(price, volumeProfileHandler.getVolumeProfile().get(price));
+        
+        // Updating recent price data and calculating standard deviation using the StandardDeviationHandler
+        standardDeviationHandler.addPrice(price);
+        double standardDeviation = standardDeviationHandler.calculateStandardDeviation();
 
-    boolean isHighVolatility = standardDeviation > settings.STANDARD_DEVIATION_THRESHOLD;
+        boolean isHighVolatility = standardDeviation > settings.STANDARD_DEVIATION_THRESHOLD;
 
-    double pointOfControlPrice = pointOfControlHandler.getPointOfControlPrice();  // Obtaining POC price from the handler
-    pocIndicator.addPoint(pointOfControlPrice);
-    stdDevIndicator.addPoint(standardDeviation);
+        double pointOfControlPrice = pointOfControlHandler.getPointOfControlPrice();  // Obtaining POC price from the handler
+        pocIndicator.addPoint(pointOfControlPrice);
+        stdDevIndicator.addPoint(standardDeviation);
 
-    int pocRobustness = volumeProfileHandler.getVolumeProfile().getOrDefault(pointOfControlPrice, 0);
+        int pocRobustness = volumeProfileHandler.getVolumeProfile().getOrDefault(pointOfControlPrice, 0);
 
-    if (currentTimestamp - startTime >= TIME_LIMIT && !Double.isNaN(previousPrice)) {
-        boolean enteredUpper = previousPrice > pointOfControlPrice + settings.POC_BUFFER && price <= pointOfControlPrice + settings.POC_BUFFER;
-        boolean exitedLower = previousPrice < pointOfControlPrice - settings.POC_BUFFER && price >= pointOfControlPrice - settings.POC_BUFFER;
+        if (currentTimestamp - startTime >= TIME_LIMIT && !Double.isNaN(previousPrice)) {
+            boolean enteredUpper = previousPrice > pointOfControlPrice + settings.POC_BUFFER && price <= pointOfControlPrice + settings.POC_BUFFER;
+            boolean exitedLower = previousPrice < pointOfControlPrice - settings.POC_BUFFER && price >= pointOfControlPrice - settings.POC_BUFFER;
 
-        boolean volumeTrigger = volumeRateOfChange > VOLUME_TRIGGER_THRESHOLD;
-        boolean pocStable = pocRobustness > POC_ROBUSTNESS_THRESHOLD;
+            boolean volumeTrigger = volumeRateOfChange > VOLUME_TRIGGER_THRESHOLD;
+            boolean pocStable = pocRobustness > POC_ROBUSTNESS_THRESHOLD;
 
-        if ((enteredUpper || exitedLower) && volumeTrigger && pocStable && isHighVolatility) {
-            pocTradeIndicator.addIcon(price, createTranslucentCircle(enteredUpper), 1, 1);
+            if ((enteredUpper || exitedLower) && volumeTrigger && pocStable && isHighVolatility) {
+                pocTradeIndicator.addIcon(price, createTranslucentCircle(enteredUpper), 1, 1);
 
-            // Assuming a quantity of 1 for simplicity, adjust as needed
-            int quantity = 1;  
-            if (enteredUpper) {
-                // Place a sell order if entered upper threshold
-                orderPlacer.placeOrder(false, price, quantity);
-            } else if (exitedLower) {
-                // Place a buy order if exited lower threshold
-                orderPlacer.placeOrder(true, price, quantity);
+                // Assuming a quantity of 1 for simplicity, adjust as needed
+                int quantity = 1;  
+                if (enteredUpper) {
+                    // Place a sell order if entered upper threshold
+                    orderPlacer.placeOrder(false, price, quantity);
+                } else if (exitedLower) {
+                    // Place a buy order if exited lower threshold
+                    orderPlacer.placeOrder(true, price, quantity);
+                }
             }
         }
+
+        previousPrice = price;
+        prevVolumeSum = volumeSum;
     }
-
-    previousPrice = price;
-    prevVolumeSum = volumeSum;
-}
-
-    
-    
+        
     private BufferedImage createTranslucentCircle(boolean isBid) {
         int diameter = 20;
         BufferedImage icon = new BufferedImage(diameter, diameter, BufferedImage.TYPE_INT_ARGB);
@@ -175,5 +185,52 @@ public void onTrade(double price, int size, TradeInfo tradeInfo) {
     }
 
     @Override
-    public void stop() {}
+    public void stop() {
+        try {
+            if (logWriter != null) {
+                logWriter.close();
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        
+    }
+
+    @Override
+    public void onOrderExecuted(ExecutionInfo executionInfo) {
+        String logData = orderLogger.formatOrderExecuted(executionInfo);
+        writeToCsvFile(logData);
+
+    }
+
+    @Override
+    public void onOrderUpdated(OrderInfoUpdate orderInfoUpdate) {
+        String logData = orderLogger.formatOrderUpdated(orderInfoUpdate);
+        writeToCsvFile(logData);
+
+    }
+
+    /// Helper method to initialize the CSV file
+    private void initializeCsvFile() {
+        try {
+            logWriter = new BufferedWriter(new FileWriter(LOG_PATH));
+            logWriter.write("Log Type,Order ID,IsBuy,Status,Price, Time");
+            logWriter.newLine();
+            logWriter.flush(); // Ensuring the data is written immediately
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+// Helper method to write a line to the CSV file
+    private void writeToCsvFile(String logData) {
+        try {
+            logWriter.write(logData);
+            logWriter.newLine();
+            logWriter.flush(); // Ensuring the data is written immediately
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
 }
