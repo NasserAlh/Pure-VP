@@ -35,4 +35,12 @@ task copyJar(type: Copy) {
     into 'C:\\Bookmap\\addons\\my_addons'
 }
 
+task generateJavadoc(type: Javadoc) {
+    source = sourceSets.main.allJava
+    classpath = configurations.compile
+    destinationDir = file('C:\\Users\\nasser\\VSCodeProjects\\Pure-VP-2\\lib\\src\\main\\java\\concurrency\\manager\\doc')
+    options.links 'https://docs.oracle.com/en/java/javase/17/docs/api/'
+
+}
+
 build.dependsOn copyJar

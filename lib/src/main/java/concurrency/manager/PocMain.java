@@ -14,8 +14,13 @@ import velox.api.layer1.data.*;
 import velox.api.layer1.simplified.*;
 import velox.gui.StrategyPanel;
 
-
-
+/**
+ * This class represents a trading strategy that uses various indicators and handlers to place buy and sell orders
+ * based on certain conditions. It implements CustomModule, TradeDataListener, TimeListener, OrdersListener, and
+ * CustomSettingsPanelProvider interfaces to receive and process trade data, time updates, order updates, and custom
+ * settings panel requests. The class is annotated with various Layer1 annotations to specify its trading strategy name,
+ * attachable type, and API version.
+ */
 @Layer1TradingStrategy
 @Layer1SimpleAttachable
 @Layer1StrategyName("POC OrderId Headers")
@@ -45,6 +50,14 @@ public class PocMain implements CustomModule, TradeDataListener, TimeListener,
     private BufferedWriter logWriter;
 
 
+    /**
+     * Initializes the PocMain object with the given alias, instrument info, API, and initial state.
+     * 
+     * @param alias the alias for the PocMain object
+     * @param info the instrument info for the PocMain object
+     * @param api the API for the PocMain object
+     * @param initialState the initial state for the PocMain object
+     */
     @Override
     public void initialize(String alias, InstrumentInfo info, Api api, InitialState initialState) {
         
@@ -63,13 +76,23 @@ public class PocMain implements CustomModule, TradeDataListener, TimeListener,
         initializeCsvFile();
     }
 
+    /**
+     * This method is called whenever a new trade is received. It updates various indicators and handlers
+     * based on the trade information. If certain conditions are met, it places a buy or sell order using
+     * the OrderPlacer object.
+     *
+     * @param price the price of the trade
+     * @param size the size of the trade
+     * @param tradeInfo the trade information object containing additional information about the trade
+     */
     @Override
     public void onTrade(double price, int size, TradeInfo tradeInfo) {
         volumeSum += size;
         double volumeRateOfChange = calculateVolumeRateOfChange();
 
         ZonedDateTime currentTime = ZonedDateTime.ofInstant(Instant.ofEpochSecond(currentTimestamp / 1_000_000_000), NY_ZONE_ID);
-        ZonedDateTime startTimeNY = currentTime.withHour(settings.START_HOUR).withMinute(settings.START_MINUTE).withDayOfYear(currentTime.getDayOfYear()).withYear(currentTime.getYear());
+        ZonedDateTime startTimeNY = currentTime.withHour(settings.START_HOUR).withMinute(settings.START_MINUTE).withDayOfYear
+            (currentTime.getDayOfYear()).withYear(currentTime.getYear());
 
         if (currentTime.isBefore(startTimeNY)) {return;}
 
@@ -119,6 +142,12 @@ public class PocMain implements CustomModule, TradeDataListener, TimeListener,
         prevVolumeSum = volumeSum;
     }
         
+    /**
+     * Creates a translucent circle image with the specified color.
+     * 
+     * @param isBid a boolean indicating whether the circle represents a bid or not
+     * @return a BufferedImage object representing the created circle image
+     */
     private BufferedImage createTranslucentCircle(boolean isBid) {
         int diameter = 20;
         BufferedImage icon = new BufferedImage(diameter, diameter, BufferedImage.TYPE_INT_ARGB);
@@ -129,10 +158,22 @@ public class PocMain implements CustomModule, TradeDataListener, TimeListener,
         return icon;
     }
 
+    /**
+     * Calculates the rate of change of the volume sum.
+     * @return the rate of change of the volume sum
+     */
     private double calculateVolumeRateOfChange() {
         return prevVolumeSum == 0 ? 0 : (double) (volumeSum - prevVolumeSum) / prevVolumeSum;
     }
 
+    /**
+     * Returns an array of custom settings panels for the strategy.
+     * The first panel contains a slider to adjust the ticks distance from POC.
+     * The second panel contains spinners to adjust the start time settings.
+     * The third panel contains a spinner to adjust the standard deviation threshold settings.
+     * Each panel updates the corresponding setting in the strategy's settings object and sets it using the API.
+     * @return an array of StrategyPanel objects representing the custom settings panels.
+     */
     @Override
     public StrategyPanel[] getCustomSettingsPanels() {
         StrategyPanel panel1 = new StrategyPanel("Settings Ticks distance from POC");
@@ -166,7 +207,8 @@ public class PocMain implements CustomModule, TradeDataListener, TimeListener,
 
         StrategyPanel panel3 = new StrategyPanel("Standard Deviation Threshold Settings");
         
-        JSpinner stdDevThresholdSpinner = new JSpinner(new SpinnerNumberModel(settings.STANDARD_DEVIATION_THRESHOLD, 0.0, 10.0, 0.1));
+        JSpinner stdDevThresholdSpinner = new JSpinner(new SpinnerNumberModel(settings.STANDARD_DEVIATION_THRESHOLD,
+            0.0, 10.0, 0.1));
         stdDevThresholdSpinner.addChangeListener(e -> {
             settings.STANDARD_DEVIATION_THRESHOLD = (Double) stdDevThresholdSpinner.getValue();
             api.setSettings(settings);
@@ -178,12 +220,20 @@ public class PocMain implements CustomModule, TradeDataListener, TimeListener,
         return new StrategyPanel[]{panel1, panel2, panel3};
     }
 
+    /**
+     * This method is called when a new timestamp is received. It updates the current timestamp and sets the start time if it is not already set.
+     * 
+     * @param nanoseconds the new timestamp in nanoseconds
+     */
     @Override
     public void onTimestamp(long nanoseconds) {
         currentTimestamp = nanoseconds;
         if (startTime == 0) startTime = nanoseconds;
     }
 
+    /**
+     * Stops the execution of the program and closes the log writer if it is not null.
+     */
     @Override
     public void stop() {
         try {
@@ -196,21 +246,33 @@ public class PocMain implements CustomModule, TradeDataListener, TimeListener,
         
     }
 
+    /**
+     * This method is called when an order is executed and logs the execution information to a CSV file.
+     * @param executionInfo the execution information of the order
+     */
     @Override
     public void onOrderExecuted(ExecutionInfo executionInfo) {
         String logData = orderLogger.formatOrderExecuted(executionInfo);
         writeToCsvFile(logData);
-
     }
 
+    /**
+     * This method is called when an order is updated.
+     * It formats the order information and writes it to a CSV file.
+     * 
+     * @param orderInfoUpdate the updated order information
+     */
     @Override
     public void onOrderUpdated(OrderInfoUpdate orderInfoUpdate) {
         String logData = orderLogger.formatOrderUpdated(orderInfoUpdate);
         writeToCsvFile(logData);
-
     }
 
-    /// Helper method to initialize the CSV file
+    /**
+     * Initializes a CSV file by creating a BufferedWriter object and writing the header row to the file.
+     * The header row contains the following columns: "Log Type", "Order ID", "IsBuy", "Status", "Price", and "Time".
+     * @throws IOException if an I/O error occurs while writing to the file.
+     */
     private void initializeCsvFile() {
         try {
             logWriter = new BufferedWriter(new FileWriter(LOG_PATH));
@@ -222,7 +284,11 @@ public class PocMain implements CustomModule, TradeDataListener, TimeListener,
         }
     }
 
-// Helper method to write a line to the CSV file
+    /**
+     * Writes the given log data to a CSV file.
+     * 
+     * @param logData the data to be written to the CSV file
+     */
     private void writeToCsvFile(String logData) {
         try {
             logWriter.write(logData);
@@ -232,5 +298,4 @@ public class PocMain implements CustomModule, TradeDataListener, TimeListener,
             e.printStackTrace();
         }
     }
-
 }
