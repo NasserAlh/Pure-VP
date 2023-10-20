@@ -278,7 +278,7 @@ public class PocMain implements CustomModule, TradeDataListener, TimeListener,
             logWriter = new BufferedWriter(new FileWriter(LOG_PATH));
             logWriter.write("Log Type,Order ID,IsBuy,Status,Price, Time");
             logWriter.newLine();
-            logWriter.flush(); // Ensuring the data is written immediately
+            logWriter.flush(); 
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -293,7 +293,7 @@ public class PocMain implements CustomModule, TradeDataListener, TimeListener,
         try {
             logWriter.write(logData);
             logWriter.newLine();
-            logWriter.flush(); // Ensuring the data is written immediately
+            logWriter.flush(); 
         } catch (IOException e) {
             e.printStackTrace();
         }

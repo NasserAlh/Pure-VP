@@ -17,17 +17,27 @@ import velox.api.layer1.settings.StrategySettingsVersion;
 import velox.api.layer1.simplified.*;
 import velox.gui.StrategyPanel;
 
+/**
+ * This class implements a trading strategy that uses the Point of Control (POC) indicator and standard deviation to identify high volatility trading opportunities.
+ * The strategy listens to trade data and time events, and provides a custom settings panel for the user to adjust the POC buffer, start time, and start minute.
+ * The strategy also calculates the volume profile and standard deviation of recent prices to determine if the market is experiencing high volatility.
+ * If the market is experiencing high volatility and the POC is stable, the strategy will enter a trade when the price enters a certain range around the POC and the volume rate of change is above a certain threshold.
+ */
 @Layer1SimpleAttachable
 @Layer1StrategyName("POC with Standard Deviation  ")
 @Layer1ApiVersion(Layer1ApiVersionValue.VERSION1)
 public class PocTrading implements CustomModule, TradeDataListener, TimeListener, CustomSettingsPanelProvider {
 
+    /**
+     * This class represents the settings for the Point of Control (POC) trading strategy.
+     * It contains the POC buffer, start hour, and start minute.
+     */
     @StrategySettingsVersion(currentVersion = 1, compatibleVersions = {})
     public static class Settings {
     public double POC_BUFFER = 2;
     public int START_HOUR = 9;
     public int START_MINUTE = 45;
-}
+    }
 
     private Indicator priceIndicator, pocIndicator, pocTradeIndicator;
     private TreeMap<Double, Integer> volumeProfile = new TreeMap<>();  
@@ -48,6 +58,15 @@ public class PocTrading implements CustomModule, TradeDataListener, TimeListener
     private Settings settings;
     private Api api;
 
+    /**
+     * Initializes the PocTrading class with the given alias, instrument info, API, and initial state.
+     * Registers indicators and sets their colors.
+     * 
+     * @param alias the alias for the PocTrading class
+     * @param info the instrument info
+     * @param api the API to use
+     * @param initialState the initial state to use
+     */
     @Override
     public void initialize(String alias, InstrumentInfo info, Api api, InitialState initialState) {
         this.api = api;
@@ -67,13 +86,41 @@ public class PocTrading implements CustomModule, TradeDataListener, TimeListener
             .forEach(i -> indicators[i].setColor(colors[i]));
     }
 
+    /**
+     * This method is called whenever a trade occurs. It updates various indicators and checks if the trading conditions are met.
+     * If the conditions are met, it adds an icon to the chart indicating a trade should be made.
+     *
+     * @param price The price of the trade.
+     * @param size The size of the trade.
+     * @param tradeInfo Information about the trade.
+     */
     @Override
     public synchronized void onTrade(double price, int size, TradeInfo tradeInfo) {
 
         volumeSum += size;
+        
+        /**
+         * Calculates the volume rate of change.
+         *
+         * @return the volume rate of change.
+         */
         double volumeRateOfChange = calculateVolumeRateOfChange();
 
+        /**
+         * Converts the current timestamp to a ZonedDateTime object in the New York time zone.
+         * 
+         * @param currentTimestamp the current timestamp in nanoseconds
+         * @return the current time in the New York time zone
+         */
         ZonedDateTime currentTime = ZonedDateTime.ofInstant(Instant.ofEpochSecond(currentTimestamp / 1_000_000_000), NY_ZONE_ID);
+        
+        /**
+         * Sets the start time for trading in New York based on the current time and the specified settings.
+         * 
+         * @param currentTime the current time
+         * @param settings the trading settings
+         * @return the start time for trading in New York
+         */
         ZonedDateTime startTimeNY = currentTime.withHour(settings.START_HOUR).withMinute(settings.START_MINUTE).withDayOfYear(currentTime.getDayOfYear()).withYear(currentTime.getYear());
 
         if (currentTime.isBefore(startTimeNY)) {
@@ -82,7 +129,7 @@ public class PocTrading implements CustomModule, TradeDataListener, TimeListener
 
         priceIndicator.addPoint(price);
 
-        // New code to update recent price data
+        
         recentPrices.add(price);
         if (recentPrices.size() > PRICE_WINDOW_SIZE) {
             recentPrices.removeFirst();
@@ -93,7 +140,7 @@ public class PocTrading implements CustomModule, TradeDataListener, TimeListener
         boolean isHighVolatility = standardDeviation > 0.5;
         Log.info("Is High Volatility: " + isHighVolatility);
 
-        volumeProfile.merge(price, size, Integer::sum);
+        volumeProfile.merge(price, size, (a, b) -> a + b);
         int currentPriceVolume = volumeProfile.get(price);
         if (currentPriceVolume > pointOfControlVolume) {
             pointOfControlPrice = price;
@@ -121,6 +168,11 @@ public class PocTrading implements CustomModule, TradeDataListener, TimeListener
         prevVolumeSum = volumeSum;
     }
 
+    /**
+     * Calculates the standard deviation of the recent prices.
+     *
+     * @return the standard deviation of the recent prices
+     */
     private double calculateStandardDeviation() {
         double mean = recentPrices.stream().mapToDouble(val -> val).average().orElse(0.0);
         double variance = recentPrices.stream().mapToDouble(val -> Math.pow(val - mean, 2)).sum() / recentPrices.size();
@@ -129,6 +181,12 @@ public class PocTrading implements CustomModule, TradeDataListener, TimeListener
         return standardDeviation;
     }
 
+    /**
+     * Creates a translucent circle icon with a specified color based on the given boolean value.
+     * 
+     * @param isBid a boolean value indicating whether the icon represents a bid or not
+     * @return a BufferedImage object representing the created icon
+     */
     private BufferedImage createTranslucentCircle(boolean isBid) {
         int diameter = 20;
         BufferedImage icon = new BufferedImage(diameter, diameter, BufferedImage.TYPE_INT_ARGB);
@@ -139,50 +197,72 @@ public class PocTrading implements CustomModule, TradeDataListener, TimeListener
         return icon;
     }
 
+    /**
+     * Calculates the volume rate of change.
+     * 
+     * @return the volume rate of change
+     */
     private double calculateVolumeRateOfChange() {
         return prevVolumeSum == 0 ? 0 : (double) (volumeSum - prevVolumeSum) / prevVolumeSum;
     }
 
-@Override
-public StrategyPanel[] getCustomSettingsPanels() {
-    StrategyPanel panel1 = new StrategyPanel("Settings Ticks distance from POC");
-    
-    JSlider pocBufferSlider = new JSlider(0, 10, (int) settings.POC_BUFFER);
-    pocBufferSlider.setMajorTickSpacing(1);
-    pocBufferSlider.setPaintTicks(true);
-    pocBufferSlider.setPaintLabels(true);
-    pocBufferSlider.addChangeListener(e -> {
-        settings.POC_BUFFER = ((JSlider) e.getSource()).getValue();
-        api.setSettings(settings);
-    });
-    panel1.add(pocBufferSlider);
-    
-    StrategyPanel panel2 = new StrategyPanel("Start Time Settings");
-    
-    JSpinner hourSpinner = new JSpinner(new SpinnerNumberModel(settings.START_HOUR, 0, 23, 1));
-    hourSpinner.addChangeListener(e -> {
-        settings.START_HOUR = (Integer) hourSpinner.getValue();
-        api.setSettings(settings);
-    });
-    
-    JSpinner minuteSpinner = new JSpinner(new SpinnerNumberModel(settings.START_MINUTE, 0, 59, 1));
-    minuteSpinner.addChangeListener(e -> {
-        settings.START_MINUTE = (Integer) minuteSpinner.getValue();
-        api.setSettings(settings);
-    });
-    
-    panel2.add(hourSpinner);
-    panel2.add(minuteSpinner);
-    
-    return new StrategyPanel[]{panel1, panel2};
-}
+    /**
+     * Returns an array of custom settings panels for the strategy.
+     * The first panel contains a slider for adjusting the ticks distance from POC.
+     * The second panel contains spinners for setting the start time of the strategy.
+     * Changes made to the settings in the panels are reflected in the strategy's settings and saved using the API.
+     *
+     * @return an array of {@link StrategyPanel} objects representing the custom settings panels for the strategy
+     */
+    @Override
+    public StrategyPanel[] getCustomSettingsPanels() {
+        StrategyPanel panel1 = new StrategyPanel("Settings Ticks distance from POC");
+        
+        JSlider pocBufferSlider = new JSlider(0, 10, (int) settings.POC_BUFFER);
+        pocBufferSlider.setMajorTickSpacing(1);
+        pocBufferSlider.setPaintTicks(true);
+        pocBufferSlider.setPaintLabels(true);
+        pocBufferSlider.addChangeListener(e -> {
+            settings.POC_BUFFER = ((JSlider) e.getSource()).getValue();
+            api.setSettings(settings);
+        });
+        panel1.add(pocBufferSlider);
+        
+        StrategyPanel panel2 = new StrategyPanel("Start Time Settings");
+        
+        JSpinner hourSpinner = new JSpinner(new SpinnerNumberModel(settings.START_HOUR, 0, 23, 1));
+        hourSpinner.addChangeListener(e -> {
+            settings.START_HOUR = (Integer) hourSpinner.getValue();
+            api.setSettings(settings);
+        });
+        
+        JSpinner minuteSpinner = new JSpinner(new SpinnerNumberModel(settings.START_MINUTE, 0, 59, 1));
+        minuteSpinner.addChangeListener(e -> {
+            settings.START_MINUTE = (Integer) minuteSpinner.getValue();
+            api.setSettings(settings);
+        });
+        
+        panel2.add(hourSpinner);
+        panel2.add(minuteSpinner);
+        
+        return new StrategyPanel[]{panel1, panel2};
+    }
 
+    /**
+     * This method is called by the trading engine to provide the current timestamp in nanoseconds.
+     * It updates the current timestamp and sets the start time if it has not been set yet.
+     *
+     * @param nanoseconds the current timestamp in nanoseconds
+     */
     @Override
     public void onTimestamp(long nanoseconds) {
         currentTimestamp = nanoseconds;
         if (startTime == 0) startTime = nanoseconds;
     }
 
+    /**
+     * Stops the trading process.
+     */
     @Override
     public void stop() {}
 }
